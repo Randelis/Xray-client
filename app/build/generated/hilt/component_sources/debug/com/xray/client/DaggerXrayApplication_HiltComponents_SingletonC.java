@@ -14,6 +14,8 @@ import com.xray.client.service.XrayVpnService_MembersInjector;
 import com.xray.client.ui.MainActivity;
 import com.xray.client.ui.latency.LatencyViewModel;
 import com.xray.client.ui.latency.LatencyViewModel_HiltModules;
+import com.xray.client.ui.viewmodel.ConnectionViewModel;
+import com.xray.client.ui.viewmodel.ConnectionViewModel_HiltModules;
 import dagger.hilt.android.ActivityRetainedLifecycle;
 import dagger.hilt.android.ViewModelLifecycle;
 import dagger.hilt.android.internal.builders.ActivityComponentBuilder;
@@ -34,6 +36,7 @@ import dagger.internal.DoubleCheck;
 import dagger.internal.IdentifierNameString;
 import dagger.internal.KeepFieldType;
 import dagger.internal.LazyClassKeyMap;
+import dagger.internal.MapBuilder;
 import dagger.internal.Preconditions;
 import dagger.internal.Provider;
 import java.util.Collections;
@@ -374,7 +377,7 @@ public final class DaggerXrayApplication_HiltComponents_SingletonC {
 
     @Override
     public Map<Class<?>, Boolean> getViewModelKeys() {
-      return LazyClassKeyMap.<Boolean>of(Collections.<String, Boolean>singletonMap(LazyClassKeyProvider.com_xray_client_ui_latency_LatencyViewModel, LatencyViewModel_HiltModules.KeyModule.provide()));
+      return LazyClassKeyMap.<Boolean>of(MapBuilder.<String, Boolean>newMapBuilder(2).put(LazyClassKeyProvider.com_xray_client_ui_viewmodel_ConnectionViewModel, ConnectionViewModel_HiltModules.KeyModule.provide()).put(LazyClassKeyProvider.com_xray_client_ui_latency_LatencyViewModel, LatencyViewModel_HiltModules.KeyModule.provide()).build());
     }
 
     @Override
@@ -396,8 +399,13 @@ public final class DaggerXrayApplication_HiltComponents_SingletonC {
     private static final class LazyClassKeyProvider {
       static String com_xray_client_ui_latency_LatencyViewModel = "com.xray.client.ui.latency.LatencyViewModel";
 
+      static String com_xray_client_ui_viewmodel_ConnectionViewModel = "com.xray.client.ui.viewmodel.ConnectionViewModel";
+
       @KeepFieldType
       LatencyViewModel com_xray_client_ui_latency_LatencyViewModel2;
+
+      @KeepFieldType
+      ConnectionViewModel com_xray_client_ui_viewmodel_ConnectionViewModel2;
     }
   }
 
@@ -407,6 +415,8 @@ public final class DaggerXrayApplication_HiltComponents_SingletonC {
     private final ActivityRetainedCImpl activityRetainedCImpl;
 
     private final ViewModelCImpl viewModelCImpl = this;
+
+    private Provider<ConnectionViewModel> connectionViewModelProvider;
 
     private Provider<LatencyViewModel> latencyViewModelProvider;
 
@@ -423,12 +433,13 @@ public final class DaggerXrayApplication_HiltComponents_SingletonC {
     @SuppressWarnings("unchecked")
     private void initialize(final SavedStateHandle savedStateHandleParam,
         final ViewModelLifecycle viewModelLifecycleParam) {
-      this.latencyViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 0);
+      this.connectionViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 0);
+      this.latencyViewModelProvider = new SwitchingProvider<>(singletonCImpl, activityRetainedCImpl, viewModelCImpl, 1);
     }
 
     @Override
     public Map<Class<?>, javax.inject.Provider<ViewModel>> getHiltViewModelMap() {
-      return LazyClassKeyMap.<javax.inject.Provider<ViewModel>>of(Collections.<String, javax.inject.Provider<ViewModel>>singletonMap(LazyClassKeyProvider.com_xray_client_ui_latency_LatencyViewModel, ((Provider) latencyViewModelProvider)));
+      return LazyClassKeyMap.<javax.inject.Provider<ViewModel>>of(MapBuilder.<String, javax.inject.Provider<ViewModel>>newMapBuilder(2).put(LazyClassKeyProvider.com_xray_client_ui_viewmodel_ConnectionViewModel, ((Provider) connectionViewModelProvider)).put(LazyClassKeyProvider.com_xray_client_ui_latency_LatencyViewModel, ((Provider) latencyViewModelProvider)).build());
     }
 
     @Override
@@ -438,7 +449,12 @@ public final class DaggerXrayApplication_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
+      static String com_xray_client_ui_viewmodel_ConnectionViewModel = "com.xray.client.ui.viewmodel.ConnectionViewModel";
+
       static String com_xray_client_ui_latency_LatencyViewModel = "com.xray.client.ui.latency.LatencyViewModel";
+
+      @KeepFieldType
+      ConnectionViewModel com_xray_client_ui_viewmodel_ConnectionViewModel2;
 
       @KeepFieldType
       LatencyViewModel com_xray_client_ui_latency_LatencyViewModel2;
@@ -465,7 +481,10 @@ public final class DaggerXrayApplication_HiltComponents_SingletonC {
       @Override
       public T get() {
         switch (id) {
-          case 0: // com.xray.client.ui.latency.LatencyViewModel 
+          case 0: // com.xray.client.ui.viewmodel.ConnectionViewModel 
+          return (T) new ConnectionViewModel(singletonCImpl.coreManagerProvider.get(), singletonCImpl.adaptiveRoutingEngineProvider.get(), singletonCImpl.nodeRepositoryImplProvider.get());
+
+          case 1: // com.xray.client.ui.latency.LatencyViewModel 
           return (T) new LatencyViewModel(singletonCImpl.nodeRepositoryImplProvider.get());
 
           default: throw new AssertionError(id);
@@ -558,11 +577,11 @@ public final class DaggerXrayApplication_HiltComponents_SingletonC {
 
     private final SingletonCImpl singletonCImpl = this;
 
-    private Provider<NodeRepositoryImpl> nodeRepositoryImplProvider;
-
     private Provider<CoreManager> coreManagerProvider;
 
     private Provider<AdaptiveRoutingEngine> adaptiveRoutingEngineProvider;
+
+    private Provider<NodeRepositoryImpl> nodeRepositoryImplProvider;
 
     private SingletonCImpl(ApplicationContextModule applicationContextModuleParam) {
       this.applicationContextModule = applicationContextModuleParam;
@@ -572,13 +591,13 @@ public final class DaggerXrayApplication_HiltComponents_SingletonC {
 
     @SuppressWarnings("unchecked")
     private void initialize(final ApplicationContextModule applicationContextModuleParam) {
-      this.nodeRepositoryImplProvider = DoubleCheck.provider(new SwitchingProvider<NodeRepositoryImpl>(singletonCImpl, 0));
-      this.coreManagerProvider = DoubleCheck.provider(new SwitchingProvider<CoreManager>(singletonCImpl, 2));
+      this.coreManagerProvider = DoubleCheck.provider(new SwitchingProvider<CoreManager>(singletonCImpl, 0));
       this.adaptiveRoutingEngineProvider = DoubleCheck.provider(new SwitchingProvider<AdaptiveRoutingEngine>(singletonCImpl, 1));
+      this.nodeRepositoryImplProvider = DoubleCheck.provider(new SwitchingProvider<NodeRepositoryImpl>(singletonCImpl, 2));
     }
 
     @Override
-    public void injectXrayApplication(XrayApplication arg0) {
+    public void injectXrayApplication(XrayApplication xrayApplication) {
     }
 
     @Override
@@ -610,14 +629,14 @@ public final class DaggerXrayApplication_HiltComponents_SingletonC {
       @Override
       public T get() {
         switch (id) {
-          case 0: // com.xray.client.data.NodeRepositoryImpl 
-          return (T) new NodeRepositoryImpl(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
+          case 0: // com.xray.client.core.CoreManager 
+          return (T) new CoreManager(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
 
           case 1: // com.xray.client.routing.AdaptiveRoutingEngine 
           return (T) new AdaptiveRoutingEngine(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule), singletonCImpl.coreManagerProvider.get());
 
-          case 2: // com.xray.client.core.CoreManager 
-          return (T) new CoreManager(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
+          case 2: // com.xray.client.data.NodeRepositoryImpl 
+          return (T) new NodeRepositoryImpl(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
 
           default: throw new AssertionError(id);
         }

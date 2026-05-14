@@ -4,6 +4,7 @@ import com.xray.client.di.AppModule;
 import com.xray.client.service.XrayVpnService_GeneratedInjector;
 import com.xray.client.ui.MainActivity_GeneratedInjector;
 import com.xray.client.ui.latency.LatencyViewModel_HiltModules;
+import com.xray.client.ui.viewmodel.ConnectionViewModel_HiltModules;
 import dagger.Binds;
 import dagger.Component;
 import dagger.Module;
@@ -156,6 +157,7 @@ public final class XrayApplication_HiltComponents {
 
   @Subcomponent(
       modules = {
+          ConnectionViewModel_HiltModules.KeyModule.class,
           HiltWrapper_ActivityRetainedComponentManager_LifecycleModule.class,
           HiltWrapper_SavedStateHandleModule.class,
           LatencyViewModel_HiltModules.KeyModule.class,
@@ -196,6 +198,7 @@ public final class XrayApplication_HiltComponents {
 
   @Subcomponent(
       modules = {
+          ConnectionViewModel_HiltModules.BindsModule.class,
           HiltWrapper_HiltViewModelFactory_ViewModelModule.class,
           LatencyViewModel_HiltModules.BindsModule.class
       }
