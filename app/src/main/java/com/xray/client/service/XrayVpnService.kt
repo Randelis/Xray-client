@@ -10,31 +10,9 @@ import com.xray.client.routing.AdaptiveRoutingEngine
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.net.InetAddress
 import javax.inject.Inject
+import kotlin.coroutines.coroutineContext
 
-/**
- * Creates the TUN interface used in [AdaptiveRoutingEngine]'s TUN mode.
- *
- * Responsibility boundary
- * ───────────────────────
- * This service ONLY manages the TUN fd and the OS-level VPN session.
- * Traffic relay into xray's transparent-proxy port happens via the
- * kernel's iptables/nftables TPROXY rule — the service itself does not
- * copy packets in userspace.
- *
- * iptables rules (set up via `su` or using root/eBPF on rooted devices,
- * or via the Android VPN routing table on non-rooted devices):
- *   ip rule add fwmark 0x1 table 100
- *   ip route add local default dev lo table 100
- *   iptables -t mangle -A PREROUTING -p tcp -j TPROXY \
- *            --tproxy-mark 0x1 --on-port 12345 --on-ip 127.0.0.1
- *
- * On stock (non-rooted) Android, the VPN builder's addRoute() sends all
- * packets through the tun0 fd; the service forwards them to xray's
- * dokodemo-door inbound via a loopback socket.
- */
 @AndroidEntryPoint
 class XrayVpnService : VpnService() {
 
@@ -42,8 +20,8 @@ class XrayVpnService : VpnService() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private var tunFd:     ParcelFileDescriptor? = null
-    private var relayJob:  Job?                  = null
+    private var tunFd:    ParcelFileDescriptor? = null
+    private var relayJob: Job?                  = null
 
     // -------------------------------------------------------------------------
     // Lifecycle
@@ -57,10 +35,7 @@ class XrayVpnService : VpnService() {
         return START_STICKY
     }
 
-    override fun onRevoke() {
-        // OS called us back (e.g. user toggled off in Settings)
-        tearDown()
-    }
+    override fun onRevoke() = tearDown()
 
     override fun onDestroy() {
         scope.cancel()
@@ -78,15 +53,12 @@ class XrayVpnService : VpnService() {
             .setSession("XrayClient")
             .addAddress("10.0.0.1", 24)
             .addDnsServer("1.1.1.1")
-            .addRoute("0.0.0.0", 0)      // capture all IPv4 traffic
-            .addRoute("::", 0)            // capture all IPv6 traffic
+            .addRoute("0.0.0.0", 0)
+            .addRoute("::", 0)
             .setMtu(MTU)
-            .setBlocking(false)          // non-blocking read on the tun fd
-            .also { builder ->
-                // Exclude our own app to avoid routing loops
-                builder.addDisallowedApplication(packageName)
-            }
-            .establish() ?: return      // null = VPN permission not granted yet
+            .setBlocking(false)
+            .addDisallowedApplication(packageName)
+            .establish() ?: return
 
         relayJob = scope.launch { relayPackets() }
     }
@@ -94,18 +66,15 @@ class XrayVpnService : VpnService() {
     private fun tearDown() {
         relayJob?.cancel()
         tunFd?.close()
-        tunFd   = null
+        tunFd    = null
         relayJob = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        @Suppress("DEPRECATION")
+        stopForeground(true)   // API 33+ would use STOP_FOREGROUND_REMOVE; this works on all
         stopSelf()
     }
 
     // -------------------------------------------------------------------------
-    // Packet relay  (non-rooted path — userspace copy to xray's tproxy port)
-    //
-    // On rooted devices you'd skip this entirely and rely on kernel TPROXY.
-    // On stock devices, we copy each raw IP packet from tun0 to a local
-    // TCP/UDP socket bound to xray's dokodemo-door inbound.
+    // Packet relay — non-rooted userspace path
     // -------------------------------------------------------------------------
 
     private suspend fun relayPackets() {
@@ -113,15 +82,12 @@ class XrayVpnService : VpnService() {
         val buf = ByteArray(MTU)
 
         FileInputStream(fd.fileDescriptor).use { tun ->
-            while (isActive) {
+            while (coroutineContext.isActive) {
                 val len = runCatching { tun.read(buf) }.getOrElse { -1 }
                 if (len <= 0) {
-                    delay(1)    // yield; tun is non-blocking
+                    delay(1)
                     continue
                 }
-                // Forward raw packet bytes to xray's transparent inbound.
-                // Full implementation would parse the IP header to determine
-                // protocol (TCP/UDP), then forward to the appropriate socket.
                 forwardToXray(buf, len)
             }
         }
@@ -129,17 +95,13 @@ class XrayVpnService : VpnService() {
 
     @Suppress("UNUSED_PARAMETER")
     private fun forwardToXray(packet: ByteArray, length: Int) {
-        // Production: parse IP header → create Socket/DatagramSocket
-        // protected() via VpnService.protect() → connect to
-        // 127.0.0.1:AdaptiveRoutingEngine.TUN_TPROXY_PORT with original dst
-        // injected as the TPROXY destination.
-        //
-        // Stub: implementation varies by packet type; see libraries like
-        // tun2socks or use WireGuard's boringtun for a production relay.
+        // Stub: production code parses IP header, creates a socket.protect()'ed
+        // connection to 127.0.0.1:AdaptiveRoutingEngine.TUN_TPROXY_PORT
+        // with the original destination injected as the TPROXY target.
     }
 
     // -------------------------------------------------------------------------
-    // Foreground notification  (required Android 14+ for VPN services)
+    // Foreground notification
     // -------------------------------------------------------------------------
 
     private fun postForegroundNotification() {
@@ -156,9 +118,9 @@ class XrayVpnService : VpnService() {
     }
 
     companion object {
-        const val ACTION_STOP   = "com.xray.client.VPN_STOP"
-        private const val CHANNEL_ID       = "xray_vpn"
-        private const val NOTIFICATION_ID  = 1
-        private const val MTU              = 1500
+        const val ACTION_STOP      = "com.xray.client.VPN_STOP"
+        private const val CHANNEL_ID      = "xray_vpn"
+        private const val NOTIFICATION_ID = 1
+        private const val MTU             = 1500
     }
 }

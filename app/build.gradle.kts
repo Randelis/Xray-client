@@ -9,12 +9,12 @@ plugins {
 
 android {
     namespace   = "com.xray.client"
-    compileSdk  = 36
+    compileSdk  = 35
 
     defaultConfig {
         applicationId   = "com.xray.client"
-        minSdk          = 26   // Android 8 — Process.waitFor(timeout,unit), POSIX file perms
-        targetSdk       = 36
+        minSdk          = 26
+        targetSdk       = 35
         versionCode     = 1
         versionName     = "1.0.0"
     }

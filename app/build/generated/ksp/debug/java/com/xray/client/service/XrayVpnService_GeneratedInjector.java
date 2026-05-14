@@ -1,0 +1,17 @@
+package com.xray.client.service;
+
+import dagger.hilt.InstallIn;
+import dagger.hilt.android.components.ServiceComponent;
+import dagger.hilt.codegen.OriginatingElement;
+import dagger.hilt.internal.GeneratedEntryPoint;
+import javax.annotation.processing.Generated;
+
+@OriginatingElement(
+    topLevelClass = XrayVpnService.class
+)
+@GeneratedEntryPoint
+@InstallIn(ServiceComponent.class)
+@Generated("dagger.hilt.android.processor.internal.androidentrypoint.InjectorEntryPointGenerator")
+public interface XrayVpnService_GeneratedInjector {
+  void injectXrayVpnService(XrayVpnService xrayVpnService);
+}

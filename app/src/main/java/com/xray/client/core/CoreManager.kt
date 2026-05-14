@@ -64,7 +64,7 @@ class CoreManager @Inject constructor(
 
             coreProcess = process
             monitorJob  = scope.launch { monitorProcess(process, configFile.absolutePath) }
-            _state.value = State.Running(pid = process.pid(), configPath = configFile.absolutePath)
+            _state.value = State.Running(pid = -1L, configPath = configFile.absolutePath)
         }.onFailure { _state.value = State.Error(it) }
     }
 
