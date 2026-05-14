@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,18 +23,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent {
-            MaterialTheme {
-                NodeListScreen()
-            }
-        }
+        setContent { MaterialTheme { NodeListScreen() } }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NodeListScreen(vm: LatencyViewModel = hiltViewModel()) {
-    val nodes by vm.rankedNodes.collectAsStateWithLifecycle()
+    val nodes        by vm.rankedNodes.collectAsStateWithLifecycle()
     val isRefreshing by vm.isRefreshing.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -43,28 +38,21 @@ fun NodeListScreen(vm: LatencyViewModel = hiltViewModel()) {
             TopAppBar(
                 title = { Text("Xray Client") },
                 actions = {
-                    if (isRefreshing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp).padding(end = 4.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
+                    if (isRefreshing)
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    else
                         TextButton(onClick = vm::refresh) { Text("Refresh") }
-                    }
                 }
             )
         }
     ) { padding ->
         if (nodes.isEmpty() && !isRefreshing) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
                 Text("No nodes configured.", style = MaterialTheme.typography.bodyLarge)
             }
         } else {
             LazyColumn(contentPadding = padding) {
-                items(nodes, key = { it.node.id }) { ranked ->
-                    NodeRow(ranked)
-                    HorizontalDivider()
-                }
+                items(nodes, key = { it.node.id }) { NodeRow(it); HorizontalDivider() }
             }
         }
     }
@@ -73,18 +61,15 @@ fun NodeListScreen(vm: LatencyViewModel = hiltViewModel()) {
 @Composable
 private fun NodeRow(ranked: RankedNode) {
     ListItem(
-        headlineContent = { Text(ranked.node.name) },
+        headlineContent   = { Text(ranked.node.name) },
         supportingContent = { Text("${ranked.node.host}:${ranked.node.port}") },
-        trailingContent = {
-            if (ranked.isReachable) {
-                Text(
-                    text = "${"%.0f".format(ranked.smoothedLatencyMs)} ms",
+        trailingContent   = {
+            if (ranked.isReachable)
+                Text("${"%.0f".format(ranked.smoothedLatencyMs)} ms",
                     style = MaterialTheme.typography.labelLarge,
-                    color = latencyColor(ranked.smoothedLatencyMs),
-                )
-            } else {
+                    color = latencyColor(ranked.smoothedLatencyMs))
+            else
                 Text("timeout", color = MaterialTheme.colorScheme.error)
-            }
         }
     )
 }

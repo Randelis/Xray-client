@@ -35,7 +35,6 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 
-    // Place ABI-split xray binaries in jniLibs so they're installed to /data/app/.../lib/
     sourceSets["main"].jniLibs.srcDirs("src/main/jniLibs")
 
     packaging {

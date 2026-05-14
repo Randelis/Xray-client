@@ -2,7 +2,6 @@ package com.xray.client.domain.model
 
 import kotlinx.serialization.Serializable
 
-/** A single proxy endpoint that xray can route traffic through. */
 @Serializable
 data class ProxyNode(
     val id:       String,
@@ -14,10 +13,6 @@ data class ProxyNode(
     val tls:      Boolean = true,
 )
 
-/**
- * A node decorated with its smoothed latency after the WMA pass.
- * [smoothedLatencyMs] is [Double.MAX_VALUE] when no samples exist (node unreachable).
- */
 data class RankedNode(
     val node:               ProxyNode,
     val smoothedLatencyMs:  Double,

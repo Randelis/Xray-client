@@ -19,13 +19,8 @@ class XrayVpnService : VpnService() {
     @Inject lateinit var routingEngine: AdaptiveRoutingEngine
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     private var tunFd:    ParcelFileDescriptor? = null
     private var relayJob: Job?                  = null
-
-    // -------------------------------------------------------------------------
-    // Lifecycle
-    // -------------------------------------------------------------------------
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -36,19 +31,10 @@ class XrayVpnService : VpnService() {
     }
 
     override fun onRevoke() = tearDown()
-
-    override fun onDestroy() {
-        scope.cancel()
-        super.onDestroy()
-    }
-
-    // -------------------------------------------------------------------------
-    // TUN setup
-    // -------------------------------------------------------------------------
+    override fun onDestroy() { scope.cancel(); super.onDestroy() }
 
     private fun setUp() {
         postForegroundNotification()
-
         tunFd = Builder()
             .setSession("XrayClient")
             .addAddress("10.0.0.1", 24)
@@ -59,62 +45,41 @@ class XrayVpnService : VpnService() {
             .setBlocking(false)
             .addDisallowedApplication(packageName)
             .establish() ?: return
-
         relayJob = scope.launch { relayPackets() }
     }
 
     private fun tearDown() {
         relayJob?.cancel()
         tunFd?.close()
-        tunFd    = null
-        relayJob = null
+        tunFd = null; relayJob = null
         @Suppress("DEPRECATION")
-        stopForeground(true)   // API 33+ would use STOP_FOREGROUND_REMOVE; this works on all
+        stopForeground(true)
         stopSelf()
     }
-
-    // -------------------------------------------------------------------------
-    // Packet relay — non-rooted userspace path
-    // -------------------------------------------------------------------------
 
     private suspend fun relayPackets() {
         val fd  = tunFd ?: return
         val buf = ByteArray(MTU)
-
         FileInputStream(fd.fileDescriptor).use { tun ->
             while (coroutineContext.isActive) {
                 val len = runCatching { tun.read(buf) }.getOrElse { -1 }
-                if (len <= 0) {
-                    delay(1)
-                    continue
-                }
+                if (len <= 0) { delay(1); continue }
                 forwardToXray(buf, len)
             }
         }
     }
 
     @Suppress("UNUSED_PARAMETER")
-    private fun forwardToXray(packet: ByteArray, length: Int) {
-        // Stub: production code parses IP header, creates a socket.protect()'ed
-        // connection to 127.0.0.1:AdaptiveRoutingEngine.TUN_TPROXY_PORT
-        // with the original destination injected as the TPROXY target.
-    }
-
-    // -------------------------------------------------------------------------
-    // Foreground notification
-    // -------------------------------------------------------------------------
+    private fun forwardToXray(packet: ByteArray, length: Int) { /* stub */ }
 
     private fun postForegroundNotification() {
         val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "VPN Status", NotificationManager.IMPORTANCE_LOW)
-        )
-        val notification = Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Xray VPN Active")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setOngoing(true)
-            .build()
-        startForeground(NOTIFICATION_ID, notification)
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_ID, "VPN Status", NotificationManager.IMPORTANCE_LOW))
+        startForeground(NOTIFICATION_ID,
+            Notification.Builder(this, CHANNEL_ID)
+                .setContentTitle("Xray VPN Active")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setOngoing(true).build())
     }
 
     companion object {
