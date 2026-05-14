@@ -4,13 +4,14 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class ProxyNode(
-    val id:       String,
-    val name:     String,
-    val host:     String,
-    val port:     Int,
-    val uuid:     String,
-    val protocol: String = "vmess",
-    val tls:      Boolean = true,
+    val id:          String,
+    val name:        String,            // also used as city display name
+    val countryCode: String = "",       // ISO 3166-1 alpha-2 — "US", "JP", "DE"
+    val host:        String,
+    val port:        Int,
+    val uuid:        String,
+    val protocol:    String  = "vmess",
+    val tls:         Boolean = true,
 )
 
 data class RankedNode(
