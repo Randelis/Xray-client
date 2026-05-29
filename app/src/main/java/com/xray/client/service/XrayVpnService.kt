@@ -29,8 +29,9 @@ class XrayVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> tearDown()
-            else        -> setUp()
+            ACTION_STOP  -> tearDown()
+            ACTION_START -> setUp()
+            else         -> tearDown()   // unknown/implicit start ⇒ don't silently open a tunnel
         }
         return START_STICKY
     }
@@ -56,7 +57,7 @@ class XrayVpnService : VpnService() {
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
             .setMtu(MTU)
-            .setBlocking(false)
+            .setBlocking(true)   // blocking read; avoids a busy spin in the relay loop
             .addDisallowedApplication(packageName)
             .establish() ?: return
 
@@ -81,23 +82,19 @@ class XrayVpnService : VpnService() {
         val fd  = tunFd ?: return
         val buf = ByteArray(MTU)
 
+        // NOTE: device-wide TUN routing is not yet functional. Turning IP packets
+        // into proxied flows needs a userspace tun2socks bridge (e.g. a bundled
+        // hev-socks5-tunnel) that dials xray's SOCKS5 inbound through protect()'d
+        // sockets — a non-rooted app cannot use iptables/tproxy for this. Until
+        // that library is added, the supported path is SOCKS5 mode. We drain the
+        // fd with a blocking read so the loop doesn't busy-spin.
         FileInputStream(fd.fileDescriptor).use { tun ->
             while (coroutineContext.isActive) {
                 val len = runCatching { tun.read(buf) }.getOrElse { -1 }
-                if (len <= 0) {
-                    delay(1)
-                    continue
-                }
-                forwardToXray(buf, len)
+                if (len <= 0) break
+                // forwardToXray(buf, len)  // TODO: tun2socks bridge
             }
         }
-    }
-
-    @Suppress("UNUSED_PARAMETER")
-    private fun forwardToXray(packet: ByteArray, length: Int) {
-        // Stub: production code parses IP header, creates a socket.protect()'ed
-        // connection to 127.0.0.1:AdaptiveRoutingEngine.TUN_TPROXY_PORT
-        // with the original destination injected as the TPROXY target.
     }
 
     // -------------------------------------------------------------------------
@@ -118,6 +115,7 @@ class XrayVpnService : VpnService() {
     }
 
     companion object {
+        const val ACTION_START     = "com.xray.client.VPN_START"
         const val ACTION_STOP      = "com.xray.client.VPN_STOP"
         private const val CHANNEL_ID      = "xray_vpn"
         private const val NOTIFICATION_ID = 1

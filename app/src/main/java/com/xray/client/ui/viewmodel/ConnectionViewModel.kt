@@ -3,10 +3,12 @@ package com.xray.client.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xray.client.core.CoreManager
+import com.xray.client.data.SubscriptionImporter
 import com.xray.client.domain.model.ProxyNode
 import com.xray.client.domain.model.RankedNode
 import com.xray.client.domain.repository.NodeRepository
 import com.xray.client.routing.AdaptiveRoutingEngine
+import com.xray.client.routing.AdaptiveRoutingEngine.SwitchResult
 import com.xray.client.routing.RoutingMode
 import com.xray.client.ui.components.ConnectionState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,9 +20,10 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ConnectionViewModel @Inject constructor(
-    private val coreManager:     CoreManager,
-    private val routingEngine:   AdaptiveRoutingEngine,
-    private val nodeRepository:  NodeRepository,
+    private val coreManager:    CoreManager,
+    private val routingEngine:  AdaptiveRoutingEngine,
+    private val nodeRepository: NodeRepository,
+    private val importer:       SubscriptionImporter,
 ) : ViewModel() {
 
     // ── Connection state ──────────────────────────────────────────────────
@@ -31,6 +34,11 @@ class ConnectionViewModel @Inject constructor(
             started      = SharingStarted.WhileSubscribed(5_000),
             initialValue = ConnectionState.Idle,
         )
+
+    // ── One-shot user-facing messages (errors, import results) ────────────
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message.asStateFlow()
+    fun consumeMessage() { _message.value = null }
 
     // ── Server list with WMA-smoothed latency ─────────────────────────────
     private val sampleWindows = mutableMapOf<String, ArrayDeque<Long>>()
@@ -50,10 +58,12 @@ class ConnectionViewModel @Inject constructor(
     private var selectedNodeId: String? = null
 
     init {
+        // Surface unexpected core exits to the UI instead of silently going Idle.
         viewModelScope.launch {
-            val existing = nodeRepository.observeNodes().first()
-            if (existing.isEmpty()) {
-                SAMPLE_NODES.forEach { nodeRepository.addNode(it) }
+            coreManager.state.collect { st ->
+                if (st is CoreManager.State.Error) {
+                    _message.value = st.cause.message ?: "Connection stopped unexpectedly"
+                }
             }
         }
     }
@@ -64,9 +74,20 @@ class ConnectionViewModel @Inject constructor(
         viewModelScope.launch {
             if (coreManager.isRunning) {
                 coreManager.stop()
+                routingEngine.onStopped()
             } else {
-                val node = pickSelectedOrFastest() ?: return@launch
-                routingEngine.switchTo(RoutingMode.SOCKS5, node)
+                val node = pickSelectedOrFastest()
+                if (node == null) {
+                    _message.value = "No servers — import a VLESS link or subscription first"
+                    return@launch
+                }
+                when (val r = routingEngine.switchTo(RoutingMode.SOCKS5, node)) {
+                    is SwitchResult.Ok                 -> Unit
+                    is SwitchResult.CoreError          ->
+                        _message.value = "Failed to connect: ${r.cause.message ?: "core error"}"
+                    is SwitchResult.NeedsVpnPermission ->
+                        _message.value = "VPN permission required for TUN mode"
+                }
             }
         }
     }
@@ -75,8 +96,30 @@ class ConnectionViewModel @Inject constructor(
         selectedNodeId = ranked.node.id
         if (coreManager.isRunning) {
             viewModelScope.launch {
-                routingEngine.switchTo(routingEngine.activeMode.value, ranked.node)
+                when (val r = routingEngine.switchTo(routingEngine.activeMode.value, ranked.node)) {
+                    is SwitchResult.CoreError ->
+                        _message.value = "Failed to switch server: ${r.cause.message ?: "core error"}"
+                    else -> Unit
+                }
             }
+        }
+    }
+
+    /** Import VLESS/VMess/Trojan links or a subscription URL pasted by the user. */
+    fun importNodes(rawInput: String) {
+        viewModelScope.launch {
+            _message.value = "Importing…"
+            val result = importer.import(rawInput)
+            val nodes  = result.getOrElse {
+                _message.value = "Import failed: ${it.message ?: "could not read input"}"
+                return@launch
+            }
+            if (nodes.isEmpty()) {
+                _message.value = "No servers found in the input"
+                return@launch
+            }
+            nodeRepository.addNodes(nodes)
+            _message.value = "Imported ${nodes.size} server(s)"
         }
     }
 
@@ -84,7 +127,7 @@ class ConnectionViewModel @Inject constructor(
 
     // ── Internals ─────────────────────────────────────────────────────────
 
-    private suspend fun pickSelectedOrFastest(): ProxyNode? {
+    private fun pickSelectedOrFastest(): ProxyNode? {
         val ranked = servers.value
         return ranked.firstOrNull { it.node.id == selectedNodeId }?.node
             ?: ranked.firstOrNull()?.node
@@ -102,10 +145,10 @@ class ConnectionViewModel @Inject constructor(
                 window.addLast(rtt)
             }
             RankedNode(
-                node               = node,
-                smoothedLatencyMs  = weightedMovingAverage(window),
-                lastRawLatencyMs   = rtt ?: Long.MAX_VALUE,
-                sampleCount        = window.size,
+                node              = node,
+                smoothedLatencyMs = weightedMovingAverage(window),
+                lastRawLatencyMs  = rtt ?: Long.MAX_VALUE,
+                sampleCount       = window.size,
             )
         }.sortedWith(compareBy({ !it.isReachable }, { it.smoothedLatencyMs }))
     }
@@ -143,31 +186,5 @@ class ConnectionViewModel @Inject constructor(
     companion object {
         private const val WMA_WINDOW         = 5
         private const val CONNECT_TIMEOUT_MS = 3_000
-
-        // Demo nodes so the UI isn't empty on first launch.
-        // Hosts are deliberately public, fast-responding endpoints — they're for
-        // showing TCP-RTT in the UI, NOT for actually proxying traffic.
-        private val SAMPLE_NODES = listOf(
-            sample("us-la",  "Los Angeles",  "US", "one.one.one.one",        443),
-            sample("jp-tk",  "Tokyo",        "JP", "dns.google",             443),
-            sample("de-fr",  "Frankfurt",    "DE", "dns.quad9.net",          443),
-            sample("uk-ln",  "London",       "GB", "cloudflare-dns.com",     443),
-            sample("sg-sg",  "Singapore",    "SG", "dns.adguard.com",        443),
-            sample("nl-am",  "Amsterdam",    "NL", "doh.opendns.com",        443),
-            sample("au-sy",  "Sydney",       "AU", "dns11.quad9.net",        443),
-            sample("ca-tr",  "Toronto",      "CA", "doh.libredns.gr",        443),
-            sample("br-sp",  "São Paulo",    "BR", "dns.nextdns.io",         443),
-            sample("fr-pa",  "Paris",        "FR", "doh.cleanbrowsing.org",  443),
-        )
-
-        private fun sample(id: String, city: String, cc: String, host: String, port: Int) =
-            ProxyNode(
-                id          = id,
-                name        = city,
-                countryCode = cc,
-                host        = host,
-                port        = port,
-                uuid        = "00000000-0000-0000-0000-000000000000",
-            )
     }
 }

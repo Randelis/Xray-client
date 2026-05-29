@@ -49,8 +49,11 @@ class CoreManager @Inject constructor(
     // -------------------------------------------------------------------------
 
     suspend fun start(configFile: File): Result<Unit> = withContext(Dispatchers.IO) {
-        check(_state.value is State.Idle || _state.value is State.Error) {
-            "CoreManager.start() called while in state ${_state.value}"
+        val current = _state.value
+        if (current !is State.Idle && current !is State.Error) {
+            return@withContext Result.failure(
+                IllegalStateException("CoreManager.start() called while in state $current")
+            )
         }
         _state.value = State.Starting
         runCatching {
@@ -63,8 +66,10 @@ class CoreManager @Inject constructor(
                 .start()
 
             coreProcess = process
+            // Publish Running BEFORE launching the monitor so an immediate exit can
+            // be reported as an error instead of being swallowed by the start race.
+            _state.value = State.Running(pid = process.pid(), configPath = configFile.absolutePath)
             monitorJob  = scope.launch { monitorProcess(process, configFile.absolutePath) }
-            _state.value = State.Running(pid = -1L, configPath = configFile.absolutePath)
         }.onFailure { _state.value = State.Error(it) }
     }
 
@@ -98,8 +103,9 @@ class CoreManager @Inject constructor(
 
         val exitCode = process.waitFor()
 
-        // Only signal error if we weren't the ones who stopped it
-        if (_state.value is State.Running) {
+        // Only signal error if we weren't the ones who stopped it AND this is still
+        // the live process (a restart may have already swapped coreProcess).
+        if (coreProcess === process && _state.value is State.Running) {
             _state.value = State.Error(
                 RuntimeException("xray exited unexpectedly (code=$exitCode, config=$configPath)")
             )

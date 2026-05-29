@@ -39,7 +39,11 @@ android {
     sourceSets["main"].jniLibs.srcDirs("src/main/jniLibs")
 
     packaging {
-        jniLibs { useLegacyPackaging = false }
+        // MUST be true: the xray executable is shipped as libxray.so. With legacy
+        // packaging the OS extracts native libs to nativeLibraryDir as real files,
+        // which is what CoreManager copies out and exec()s. With it off the binary
+        // stays compressed inside the APK and cannot be run.
+        jniLibs { useLegacyPackaging = true }
     }
 }
 

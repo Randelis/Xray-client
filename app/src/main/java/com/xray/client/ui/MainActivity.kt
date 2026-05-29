@@ -23,12 +23,16 @@ class MainActivity : ComponentActivity() {
                 val vm: ConnectionViewModel = hiltViewModel()
                 val connectionState by vm.connectionState.collectAsStateWithLifecycle()
                 val servers         by vm.servers.collectAsStateWithLifecycle()
+                val message         by vm.message.collectAsStateWithLifecycle()
 
                 XrayNavigationHost(
                     connectionState    = connectionState,
                     onToggleConnection = vm::toggleConnection,
                     servers            = servers,
                     onServerSelected   = vm::selectServer,
+                    message            = message,
+                    onConsumeMessage   = vm::consumeMessage,
+                    onImport           = vm::importNodes,
                 )
             }
         }

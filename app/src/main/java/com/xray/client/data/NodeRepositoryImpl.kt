@@ -30,14 +30,14 @@ class NodeRepositoryImpl @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
 
     override fun observeNodes(): Flow<List<ProxyNode>> =
-        context.nodeStore.data.map { prefs ->
-            prefs[NODES_KEY]
-                ?.let { json.decodeFromString<List<ProxyNode>>(it) }
-                ?: emptyList()
-        }
+        context.nodeStore.data.map { prefs -> decode(prefs[NODES_KEY]) }
 
-    override suspend fun addNode(node: ProxyNode) = mutate { list ->
-        list + node
+    override suspend fun addNode(node: ProxyNode) = addNodes(listOf(node))
+
+    override suspend fun addNodes(nodes: List<ProxyNode>) = mutate { current ->
+        // Replace existing nodes with the same id, then append new ones, preserving order.
+        val incomingIds = nodes.mapTo(HashSet()) { it.id }
+        current.filterNot { it.id in incomingIds } + nodes
     }
 
     override suspend fun removeNode(id: String) = mutate { list ->
@@ -48,12 +48,15 @@ class NodeRepositoryImpl @Inject constructor(
         list.map { if (it.id == node.id) node else it }
     }
 
+    override suspend fun clearAll() = mutate { emptyList() }
+
     private suspend fun mutate(transform: (List<ProxyNode>) -> List<ProxyNode>) {
         context.nodeStore.edit { prefs ->
-            val current = prefs[NODES_KEY]
-                ?.let { json.decodeFromString<List<ProxyNode>>(it) }
-                ?: emptyList()
-            prefs[NODES_KEY] = json.encodeToString(transform(current))
+            prefs[NODES_KEY] = json.encodeToString(transform(decode(prefs[NODES_KEY])))
         }
     }
+
+    /** Tolerant decode: corrupt/legacy data yields an empty list rather than crashing collectors. */
+    private fun decode(raw: String?): List<ProxyNode> =
+        raw?.let { runCatching { json.decodeFromString<List<ProxyNode>>(it) }.getOrNull() } ?: emptyList()
 }
