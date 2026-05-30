@@ -86,7 +86,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: XrayClient-windows
+          name: XrayClient-Portable-windows
           path: desktop/dist/XrayClient.exe
           if-no-files-found: error
 

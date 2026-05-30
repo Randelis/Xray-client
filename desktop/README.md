@@ -45,22 +45,33 @@ The tricky parts, handled automatically:
 TUN mode is **Windows-only** and needs **administrator rights** (to edit routes).
 If you start it without elevation, the app offers to relaunch via UAC.
 
-## Download a ready-to-run .exe (no setup)
+## Portable download — no install, no setup
 
-You don't have to install Python or download xray/tun2socks/wintun yourself — a
-GitHub Actions workflow builds a single bundled `XrayClient.exe` for you:
+There's nothing to install. A GitHub Actions workflow builds **one single
+`XrayClient.exe`** with xray-core, tun2socks, wintun and the Python runtime all
+bundled inside. Just download it and double-click.
 
 1. Open the repo's **Actions** tab → **Build Windows EXE** → the latest run.
-2. Download the **`XrayClient-windows`** artifact (it's a zip containing
-   `XrayClient.exe`). Unzip and run it.
+2. Download the **`XrayClient-Portable-windows`** artifact (a zip containing
+   `XrayClient.exe`). Unzip and run it. Done.
 
 For a permanent download link, push a tag like `v1.0.0` (or create a Release) —
 the same workflow attaches `XrayClient.exe` to the **Release**.
 
-> The exe already contains xray-core, tun2socks and wintun. TUN mode still needs
-> admin; the app shows a UAC prompt when you connect. Windows SmartScreen may warn
-> about an unsigned exe the first time — choose **More info → Run anyway** (or sign
-> it with your own code-signing certificate).
+### What "portable" means here
+
+- **One file.** No Python, no separate xray/tun2socks/wintun downloads, no installer.
+- **Self-contained settings.** Your imported servers are saved in an
+  `XrayClient-Data` folder created **next to the .exe** (not in `%APPDATA%`). Keep
+  the `.exe` and that folder together — drop them on a USB stick or any folder and
+  it just works. Delete both to leave **no trace** on the machine.
+  - If the `.exe` sits somewhere read-only (e.g. `Program Files`), it
+    automatically falls back to `%APPDATA%\XrayClient`.
+  - Override the location any time with the `XRAYCLIENT_DATA` environment variable.
+
+> TUN mode still needs admin — the app shows a UAC prompt when you connect.
+> Windows SmartScreen may warn about an unsigned exe the first time: choose
+> **More info → Run anyway** (or sign it with your own code-signing certificate).
 
 ## Setup (run from source instead)
 

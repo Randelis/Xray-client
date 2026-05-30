@@ -25,6 +25,20 @@ class State(Enum):
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # Windows: hide console
 
 
+def _runtime_dir() -> Path:
+    """Where xray's generated config (server address + credentials) is written.
+    Kept next to the app's data — portable, and out of the shared system temp."""
+    from . import storage
+    try:
+        d = storage.DATA_DIR / "run"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+    except OSError:
+        d = Path(tempfile.gettempdir()) / "xray-client"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+
 class XrayCore:
     """Starts/stops the bundled (or PATH) xray executable with a generated config."""
 
@@ -77,8 +91,7 @@ class XrayCore:
                 )
                 return
 
-            cfg_dir = Path(tempfile.gettempdir()) / "xray-client"
-            cfg_dir.mkdir(parents=True, exist_ok=True)
+            cfg_dir = _runtime_dir()
             self._config_path = cfg_dir / "config.json"
             self._config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
