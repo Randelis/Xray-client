@@ -1,0 +1,7 @@
+# The xray-core executable goes here (downloaded by the user, not committed).
+xray
+xray.exe
+*.dll
+geoip.dat
+geosite.dat
+!.gitignore
