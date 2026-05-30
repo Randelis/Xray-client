@@ -45,7 +45,24 @@ The tricky parts, handled automatically:
 TUN mode is **Windows-only** and needs **administrator rights** (to edit routes).
 If you start it without elevation, the app offers to relaunch via UAC.
 
-## Setup
+## Download a ready-to-run .exe (no setup)
+
+You don't have to install Python or download xray/tun2socks/wintun yourself — a
+GitHub Actions workflow builds a single bundled `XrayClient.exe` for you:
+
+1. Open the repo's **Actions** tab → **Build Windows EXE** → the latest run.
+2. Download the **`XrayClient-windows`** artifact (it's a zip containing
+   `XrayClient.exe`). Unzip and run it.
+
+For a permanent download link, push a tag like `v1.0.0` (or create a Release) —
+the same workflow attaches `XrayClient.exe` to the **Release**.
+
+> The exe already contains xray-core, tun2socks and wintun. TUN mode still needs
+> admin; the app shows a UAC prompt when you connect. Windows SmartScreen may warn
+> about an unsigned exe the first time — choose **More info → Run anyway** (or sign
+> it with your own code-signing certificate).
+
+## Setup (run from source instead)
 
 1. **Install Python 3.10+** (3.11+ recommended).
 

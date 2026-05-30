@@ -1,0 +1,98 @@
+name: Build Windows EXE
+
+# Produces a single, ready-to-run XrayClient.exe with xray-core, tun2socks and
+# wintun already bundled inside — nothing to install on the user's machine.
+#
+#  * push to the dev branch / manual run  -> downloadable build artifact
+#  * push a tag like v1.0.0               -> a GitHub Release with the .exe attached
+
+on:
+  push:
+    branches: [ claude/vpn-client-review-9Y7KA ]
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/build-windows.yml'
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Download bundled binaries (xray-core, tun2socks, wintun)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bin = "xray_client/bin"
+          New-Item -ItemType Directory -Force -Path $bin | Out-Null
+          $tmp = New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP/dl"
+          $headers = @{ "User-Agent" = "gh-actions"; "Authorization" = "Bearer $env:GH_TOKEN" }
+
+          function Get-LatestAsset($repo, $pattern) {
+            $rel = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers $headers
+            $asset = $rel.assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
+            if (-not $asset) { throw "No asset matching '$pattern' in $repo" }
+            $out = Join-Path $tmp $asset.name
+            Invoke-WebRequest $asset.browser_download_url -OutFile $out -Headers @{ "User-Agent" = "gh-actions" }
+            return $out
+          }
+
+          # xray-core
+          $z = Get-LatestAsset "XTLS/Xray-core" "Xray-windows-64\.zip"
+          Expand-Archive $z -DestinationPath "$tmp/xray" -Force
+          Copy-Item "$tmp/xray/xray.exe" "$bin/xray.exe" -Force
+
+          # tun2socks
+          $z = Get-LatestAsset "xjasonlyu/tun2socks" "tun2socks-windows-amd64\.zip"
+          Expand-Archive $z -DestinationPath "$tmp/t2s" -Force
+          $exe = Get-ChildItem "$tmp/t2s" -Recurse -Filter "*.exe" | Select-Object -First 1
+          Copy-Item $exe.FullName "$bin/tun2socks.exe" -Force
+
+          # wintun (not on GitHub; pinned official build)
+          $w = Join-Path $tmp "wintun.zip"
+          Invoke-WebRequest "https://www.wintun.net/builds/wintun-0.14.1.zip" -OutFile $w -Headers @{ "User-Agent" = "gh-actions" }
+          Expand-Archive $w -DestinationPath "$tmp/wintun" -Force
+          Copy-Item "$tmp/wintun/wintun/bin/amd64/wintun.dll" "$bin/wintun.dll" -Force
+
+          Write-Host "Bundled binaries:"
+          Get-ChildItem $bin | Format-Table Name, Length
+
+      - name: Build single-file EXE
+        run: >
+          pyinstaller --noconfirm --clean --onefile --windowed
+          --name XrayClient
+          --add-data "xray_client/bin;xray_client/bin"
+          main.py
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: XrayClient-windows
+          path: desktop/dist/XrayClient.exe
+          if-no-files-found: error
+
+      - name: Attach EXE to release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: desktop/dist/XrayClient.exe
+          generate_release_notes: true
