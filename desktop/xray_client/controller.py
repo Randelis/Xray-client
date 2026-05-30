@@ -10,11 +10,17 @@ from typing import Optional
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 
-from . import importer, storage, system_proxy
+from . import importer, netutil, storage, system_proxy
 from .config_builder import HTTP_PORT, SOCKS_PORT, build_config
 from .core import State, XrayCore
 from .latency import LatencyProber
 from .models import ProxyNode, RankedNode
+from .tun import TunError, TunManager
+
+# Connection modes
+MODE_MANUAL = "manual"   # just expose SOCKS5/HTTP; user configures apps
+MODE_PROXY = "proxy"     # set the Windows system proxy
+MODE_TUN = "tun"         # system-wide TUN: every app routed
 
 
 class _WorkerSignals(QObject):
@@ -49,7 +55,8 @@ class Controller(QObject):
         self._nodes: list[ProxyNode] = storage.load_nodes()
         self._ranked: list[RankedNode] = [RankedNode(n) for n in self._nodes]
         self._selected_id: Optional[str] = None
-        self._use_system_proxy = system_proxy.is_supported()
+        self._tun = TunManager(log=lambda m: self.message.emit(m))
+        self._mode = MODE_PROXY if system_proxy.is_supported() else MODE_MANUAL
         self._proxy_active = False
 
     # ── properties ───────────────────────────────────────────────────────────
@@ -66,11 +73,15 @@ class Controller(QObject):
         return system_proxy.is_supported()
 
     @property
-    def use_system_proxy(self) -> bool:
-        return self._use_system_proxy
+    def tun_supported(self) -> bool:
+        return TunManager.is_supported()
 
-    def set_use_system_proxy(self, value: bool) -> None:
-        self._use_system_proxy = value
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    def set_mode(self, mode: str) -> None:
+        self._mode = mode
 
     def set_selected(self, node_id: Optional[str]) -> None:
         self._selected_id = node_id
@@ -139,13 +150,38 @@ class Controller(QObject):
             self._run_bg(self._connect, node)
 
     def _connect(self, node: ProxyNode) -> None:
-        self._core.start(build_config(node))
-        if self._core.is_running and self._use_system_proxy and system_proxy.is_supported():
+        # In TUN mode, resolve the server up front (before routing is hijacked) and
+        # pin xray to that exact IP, so its underlying connection bypasses the TUN.
+        pin_ip = None
+        server_ips: list[str] = []
+        if self._mode == MODE_TUN:
+            server_ips = netutil.resolve_ipv4(node.host)
+            if not server_ips:
+                self.state_changed.emit(State.ERROR, f"Could not resolve server {node.host}.")
+                return
+            pin_ip = server_ips[0]
+
+        self._core.start(build_config(node, pin_address=pin_ip))
+        if not self._core.is_running:
+            return  # core already reported the error via its state callback
+
+        if self._mode == MODE_PROXY and system_proxy.is_supported():
             self._proxy_active = system_proxy.enable(port=HTTP_PORT)
+        elif self._mode == MODE_TUN:
+            try:
+                self._tun.start(server_ips)
+            except TunError as e:
+                self._core.stop()
+                self.state_changed.emit(State.ERROR, str(e))
 
     def _disconnect(self) -> None:
-        self._clear_proxy()
+        self._tear_down_routing()
         self._core.stop()
+
+    def _tear_down_routing(self) -> None:
+        if self._tun.is_active:
+            self._tun.stop()
+        self._clear_proxy()
 
     def _clear_proxy(self) -> None:
         if self._proxy_active:
@@ -162,7 +198,7 @@ class Controller(QObject):
     # ── core state bridge (runs on monitor thread) ───────────────────────────
     def _on_core_state(self, state: State, message: str) -> None:
         if state == State.ERROR:
-            self._clear_proxy()
+            self._tear_down_routing()
         self.state_changed.emit(state, message)
 
     def _run_bg(self, fn, *args) -> None:
@@ -171,5 +207,5 @@ class Controller(QObject):
         self._pool.start(w)
 
     def shutdown(self) -> None:
-        self._clear_proxy()
+        self._tear_down_routing()
         self._core.stop()

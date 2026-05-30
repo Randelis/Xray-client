@@ -4,15 +4,22 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QDialog, QDialogButtonBox, QFrame, QHBoxLayout,
-    QHeaderView, QLabel, QMainWindow, QPlainTextEdit, QPushButton, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QApplication, QComboBox, QDialog, QDialogButtonBox, QFrame,
+    QHBoxLayout, QHeaderView, QLabel, QMainWindow, QMessageBox, QPlainTextEdit,
+    QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from .controller import Controller
+from . import elevate
+from .controller import MODE_MANUAL, MODE_PROXY, MODE_TUN, Controller
 from .core import State
 from .models import RankedNode
 from .parser import flag_emoji
+
+_MODES = [
+    ("System proxy (browsers & WinINET apps)", MODE_PROXY),
+    ("TUN — all apps, system-wide", MODE_TUN),
+    ("Manual (SOCKS5 / HTTP only)", MODE_MANUAL),
+]
 
 _DOT = {
     State.IDLE:     ("#4A4A4A", "Disconnected"),
@@ -94,7 +101,7 @@ class MainWindow(QMainWindow):
         self.status_label.setStyleSheet("color: #9E9E9E;")
         self.connect_btn = QPushButton("Connect")
         self.connect_btn.setObjectName("connect")
-        self.connect_btn.clicked.connect(self.c.toggle_connection)
+        self.connect_btn.clicked.connect(self._on_connect_clicked)
 
         header.addWidget(title)
         header.addSpacing(12)
@@ -115,7 +122,7 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.table.itemSelectionChanged.connect(self._on_selection)
-        self.table.itemDoubleClicked.connect(lambda _: self.c.toggle_connection())
+        self.table.itemDoubleClicked.connect(lambda _: self._on_connect_clicked())
         outer.addWidget(self.table, 1)
 
         # ── action row ────────────────────────────────────────────────────
@@ -127,18 +134,23 @@ class MainWindow(QMainWindow):
         self.remove_btn = QPushButton("Remove")
         self.remove_btn.clicked.connect(self._remove_selected)
 
-        self.proxy_check = QCheckBox("Set Windows system proxy")
-        self.proxy_check.setChecked(self.c.use_system_proxy)
-        self.proxy_check.setEnabled(self.c.system_proxy_supported)
-        if not self.c.system_proxy_supported:
-            self.proxy_check.setToolTip("Only available on Windows")
-        self.proxy_check.toggled.connect(self.c.set_use_system_proxy)
+        self.mode_combo = QComboBox()
+        for label, value in _MODES:
+            self.mode_combo.addItem(label, value)
+        for i, (_, value) in enumerate(_MODES):
+            if value == self.c.mode:
+                self.mode_combo.setCurrentIndex(i)
+        if not self.c.tun_supported:  # TUN is Windows-only
+            idx = next(i for i, (_, v) in enumerate(_MODES) if v == MODE_TUN)
+            self.mode_combo.model().item(idx).setEnabled(False)
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_change)
 
         actions.addWidget(self.import_btn)
         actions.addWidget(self.refresh_btn)
         actions.addWidget(self.remove_btn)
         actions.addStretch(1)
-        actions.addWidget(self.proxy_check)
+        actions.addWidget(QLabel("Mode:"))
+        actions.addWidget(self.mode_combo)
         outer.addLayout(actions)
 
         # ── footer ────────────────────────────────────────────────────────
@@ -207,6 +219,35 @@ class MainWindow(QMainWindow):
 
     def _on_selection(self):
         self.c.set_selected(self._selected_id())
+
+    def _on_mode_change(self, index: int):
+        self.c.set_mode(self.mode_combo.itemData(index))
+
+    def _on_connect_clicked(self):
+        # When connecting in TUN mode, make sure we're elevated first.
+        connecting = self.c.state not in (State.RUNNING, State.STARTING, State.STOPPING)
+        if connecting and self.c.mode == MODE_TUN and not elevate.is_admin():
+            if not self._prompt_elevation():
+                return
+        self.c.toggle_connection()
+
+    def _prompt_elevation(self) -> bool:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle("Administrator required")
+        box.setText(
+            "TUN mode changes system routes, which needs administrator rights.\n\n"
+            "Relaunch Xray Client as administrator now?"
+        )
+        box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        if box.exec() != QMessageBox.Yes:
+            return False
+        if elevate.relaunch_as_admin():
+            self.c.shutdown()
+            QApplication.quit()
+            return False  # the elevated instance takes over
+        QMessageBox.warning(self, "Xray Client", "Could not elevate. Run the app as administrator.")
+        return False
 
     def _remove_selected(self):
         node_id = self._selected_id()

@@ -2,9 +2,9 @@
 
 A PC version of the Android Xray client. It runs **xray-core** as a local
 SOCKS5 / HTTP proxy and lets you import VLESS / VMess / Trojan links or a
-subscription URL, probe server latency, and connect with one click. Optionally
-it sets the **Windows system proxy** so apps that honor it (browsers, etc.) go
-through the tunnel — no admin rights required.
+subscription URL, probe server latency, and connect with one click. It offers
+three connection modes — including a full **TUN mode** that routes *every* app
+on the system through the tunnel (games, Discord, anything), not just browsers.
 
 > Built with Python + PySide6. It mirrors the Android app's config/parsing logic.
 
@@ -16,8 +16,34 @@ through the tunnel — no admin rights required.
 - One-click connect/disconnect; the fastest (or selected) server is used.
 - Full VLESS/VMess/Trojan outbound generation incl. **TLS / Reality** and
   **ws / grpc / h2 / tcp-http** transports.
-- Optional Windows system-proxy toggle (points HTTP/HTTPS at `127.0.0.1:10809`).
+- **Three modes** (dropdown, bottom-right):
+  - **System proxy** — sets the per-user Windows proxy; browsers & WinINET apps follow it.
+  - **TUN (all apps)** — system-wide capture via wintun + tun2socks; *everything* is routed.
+  - **Manual** — just exposes SOCKS5/HTTP; you point apps at it yourself.
 - Servers persist between runs (`%APPDATA%\XrayClient\nodes.json`).
+
+## How TUN mode works
+
+```
+all OS traffic ─▶ wintun TUN device ─▶ tun2socks ─▶ SOCKS5 (xray) ─▶ your server
+```
+
+The tricky parts, handled automatically:
+
+- **Server-IP bypass route** — before routing is hijacked, the app resolves your
+  server's address and pins xray to that exact IP, then adds a `/32` route for it
+  via your real gateway. This stops the tunnel's own underlying connection from
+  looping back into itself. (SNI/TLS still uses the original hostname, so it validates.)
+- **Catch-all split routes** — two `/1` routes (`0.0.0.0/1` + `128.0.0.0/1`) send
+  everything else through the TUN. They beat the existing default route by
+  specificity, so your original default route is left intact and restore is clean.
+- **DNS through the tunnel** — the TUN adapter's DNS is set to `1.1.1.1`, so name
+  lookups also go through xray (no DNS leak to your ISP).
+- All routes/DNS changes are tracked and reverted on disconnect, exit, or if the
+  core crashes.
+
+TUN mode is **Windows-only** and needs **administrator rights** (to edit routes).
+If you start it without elevation, the app offers to relaunch via UAC.
 
 ## Setup
 
@@ -37,24 +63,33 @@ through the tunnel — no admin rights required.
    ```
    Alternatively, put `xray` on your system `PATH`.
 
-4. **Run:**
+4. **(For TUN mode) provide tun2socks + wintun.** Both go in the same `bin/` folder:
+   - `tun2socks.exe` — from <https://github.com/xjasonlyu/tun2socks/releases>
+   - `wintun.dll` — from <https://www.wintun.net> (use the `amd64` build for 64-bit Windows)
+   ```
+   desktop/xray_client/bin/tun2socks.exe
+   desktop/xray_client/bin/wintun.dll
+   ```
+   You don't need these for System-proxy or Manual mode.
+
+5. **Run:**
    ```powershell
    python main.py
    ```
+   For TUN mode, run from an **Administrator** terminal (or accept the UAC prompt
+   the app shows when you connect).
 
 ## Usage
 
 1. Click **Import**, paste your VLESS link(s) or subscription URL, click **Import**.
 2. The list fills in and pings each server. Pick one (or just connect — the
    fastest is used).
-3. Click **Connect**. The local proxy listens on:
-   - SOCKS5 `127.0.0.1:10808`
-   - HTTP `127.0.0.1:10809`
-4. To route system apps automatically, tick **Set Windows system proxy** before
-   connecting. It's reverted on disconnect / exit / unexpected core exit.
-
-If you don't use the system-proxy toggle, point your app at the SOCKS5/HTTP
-address above manually.
+3. Choose a **Mode** (dropdown, bottom-right):
+   - **TUN (all apps)** — recommended; routes everything system-wide. Needs admin.
+   - **System proxy** — browsers and WinINET apps only.
+   - **Manual** — point apps at SOCKS5 `127.0.0.1:10808` / HTTP `127.0.0.1:10809`.
+4. Click **Connect**. All routing/proxy/DNS changes are reverted automatically on
+   disconnect, exit, or unexpected core exit.
 
 ## Build a standalone .exe (optional)
 
@@ -62,13 +97,20 @@ address above manually.
 pip install pyinstaller
 pyinstaller --noconsole --name XrayClient --add-data "xray_client/bin;xray_client/bin" main.py
 ```
-The bundled `xray.exe` is picked up from `xray_client/bin` next to the app.
+The bundled `xray.exe`, `tun2socks.exe`, and `wintun.dll` are picked up from
+`xray_client/bin` next to the app. To launch elevated by default, add a manifest
+with `requestedExecutionLevel=requireAdministrator`.
 
 ## Notes / limitations
 
-- This is **local-proxy mode**, not a full system VPN/TUN. Apps that ignore the
-  system proxy won't be routed unless you configure them to use the SOCKS5/HTTP
-  port. (A TUN mode would need a wintun + tun2socks bridge and admin rights.)
-- The system-proxy toggle uses the per-user WinINET settings and is a no-op on
-  non-Windows platforms (the app still runs; configure apps manually there).
-```
+- **TUN mode is Windows-only** and requires admin + the `tun2socks.exe` and
+  `wintun.dll` binaries. On macOS/Linux the mode is disabled in the UI (the app
+  still runs in System-proxy/Manual mode).
+- TUN routing covers **IPv4** fully. If you have native IPv6 and want zero
+  IPv6 leakage, disable IPv6 on your adapter or rely on the IPv4-only routing
+  (most blocked services resolve over IPv4 fine).
+- The TUN adapter name / addresses / DNS are constants in
+  `xray_client/netutil.py` (`XrayTun`, `10.10.10.2`, DNS `1.1.1.1`) — change them
+  there if they clash with your network.
+- The system-proxy mode uses per-user WinINET settings and is a no-op on
+  non-Windows platforms.

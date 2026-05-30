@@ -10,7 +10,19 @@ SOCKS_PORT = 10808
 HTTP_PORT = 10809
 
 
-def build_config(node: ProxyNode, socks_port: int = SOCKS_PORT, http_port: int = HTTP_PORT) -> dict:
+def build_config(
+    node: ProxyNode,
+    socks_port: int = SOCKS_PORT,
+    http_port: int = HTTP_PORT,
+    pin_address: str | None = None,
+) -> dict:
+    """Build the xray config.
+
+    pin_address: when set (TUN mode), xray connects to this literal IP instead of
+    resolving node.host itself. SNI / Host headers still use the original
+    hostname, so TLS validates. This guarantees the underlying connection goes to
+    the exact IP we add a bypass route for — preventing a routing loop.
+    """
     return {
         "log": {"loglevel": "warning"},
         "inbounds": [
@@ -31,7 +43,7 @@ def build_config(node: ProxyNode, socks_port: int = SOCKS_PORT, http_port: int =
             },
         ],
         "outbounds": [
-            _proxy_outbound(node),
+            _proxy_outbound(node, pin_address),
             {"tag": "direct-out", "protocol": "freedom", "settings": {"domainStrategy": "UseIPv4"}},
             {"tag": "block-out", "protocol": "blackhole"},
         ],
@@ -59,11 +71,11 @@ def _sniffing() -> dict:
     return {"enabled": True, "destOverride": ["http", "tls", "quic"], "routeOnly": False}
 
 
-def _proxy_outbound(node: ProxyNode) -> dict:
+def _proxy_outbound(node: ProxyNode, pin_address: str | None = None) -> dict:
     out = {
         "tag": "proxy-out",
         "protocol": node.protocol,
-        "settings": _outbound_settings(node),
+        "settings": _outbound_settings(node, pin_address),
     }
     stream = _stream_settings(node)
     if stream is not None:
@@ -71,9 +83,10 @@ def _proxy_outbound(node: ProxyNode) -> dict:
     return out
 
 
-def _outbound_settings(node: ProxyNode) -> dict:
+def _outbound_settings(node: ProxyNode, pin_address: str | None = None) -> dict:
+    address = pin_address or node.host
     if node.protocol == "trojan":
-        server = {"address": node.host, "port": node.port, "password": node.uuid}
+        server = {"address": address, "port": node.port, "password": node.uuid}
         if node.flow:
             server["flow"] = node.flow
         return {"servers": [server]}
@@ -87,7 +100,7 @@ def _outbound_settings(node: ProxyNode) -> dict:
     else:  # vmess
         user["alterId"] = node.alter_id
         user["security"] = node.vmess_security or "auto"
-    return {"vnext": [{"address": node.host, "port": node.port, "users": [user]}]}
+    return {"vnext": [{"address": address, "port": node.port, "users": [user]}]}
 
 
 def _stream_settings(node: ProxyNode):

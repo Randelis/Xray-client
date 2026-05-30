@@ -1,6 +1,8 @@
-# The xray-core executable goes here (downloaded by the user, not committed).
+# Binaries go here (downloaded by the user, not committed).
 xray
 xray.exe
+tun2socks
+tun2socks.exe
 *.dll
 geoip.dat
 geosite.dat
